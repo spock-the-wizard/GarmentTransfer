@@ -1,45 +1,6 @@
 import bpy
 
-BONE_BELLY_BUTTON = 'spine01'
-BONE_LEFT_SHOULDER = 'upperarm_L'
-BONE_RIGHT_SHOULDER = 'upperarm_R'
-def get_mesh():
-    #find the model mesh from the blender file
-    if len(bpy.data.meshes) != 0:
-        return bpy.data.meshes[0]        
-    else:
-        return -1
-
-def get_bones(mesh):
-    if len(bpy.data.armatures) != 0:
-        bones = bpy.data.armatures[0].bones
-        return bones
-    else:
-        return -1
-"""
-mesh = get_mesh()
-bones = get_bones(mesh)
-
-
-bone = bones.get(BONE_BELLY_BUTTON)
-
-
-# making sure active object is the mesh, and not the skeleton
-cur = bpy.context.active_object
-print(cur.type)
-if cur.type != 'MESH':
-    for child in cur.children:
-        print(child.type)
-        if child.type == 'MESH':
-            # setting active object to CHILD
-            bpy.context.view_layer.objects.active = child
-            print('reaches here')
-            break
-if bpy.context.active_object.type != 'MESH':
-    print('failed in finding humaniod mesh')
-    exit(1)
-"""
-
+# basic string keywords
 GARMENT = 'tshirt'
 HUMANOID_DEFAULT = 'human_male_base03'
 ARMATURE_NAME = 'skeleton_human_male.001'
@@ -107,24 +68,28 @@ if 'GROUP_TORSO' not in humanoid.vertex_groups.keys():
     group_left_lower_arm.add(indices[2], 0.5, 'REPLACE')
     group_right_lower_arm.add(indices[3], 0.5, 'REPLACE')
     group_torso.add(indices[4],0.5,'REPLACE')
+else:
+    group_torso = humanoid.vertex_groups.get('GROUP_TORSO')
 
 
-# for each vertex in the target area, 
-"""
-count=10
+
+###### ray casting from default humanoid to garment! ########
+humanoid_to_garment = {}
 for v in vertices_humanoid:
-    local_coords = garment.matrix_world.inverted() @ v.co
-    local_normal = garment.matrix_world.inverted() @ v.normal
-    
-    # LOCATION is going to be in LOCAL coords (have to change later)
-    is_region, location, normal, face_index = garment.ray_cast([local_coords[0],local_coords[1],local_coords[2]],[local_normal[0],local_normal[1],local_normal[2]])
-    
-    if is_region:
-        # add to vertex group, and add the LOCATION as a garment mesh vertex
-        v.co += v.normal
-        count-=1
-    
-    
-    if count ==0:
-        break
-"""
+    for grp in v.groups:
+        if grp.group==group_torso.index:
+            # get local coordinates of the vertex
+            localC = garment.matrix_world.inverted() @ v.co
+            localN = garment.matrix_world.inverted() @ v.normal
+            
+                
+            # apply ray casting, store the result
+            collision, location, nml, idx = garment.ray_cast([localC[0], localC[1], localC[2]],[localN[0],localN[1],localN[2]])
+            # if collision was detected, add intersection to garment and store its index along with origin in humanoid
+            if collision:
+                garment.data.vertices.add(1)
+                index = len(garment.data.vertices)-1
+                garment.data.vertices[index].co = location
+                humanoid_to_garment[v.index] = index      
+            
+            
