@@ -3,8 +3,6 @@ import bpy
 BONE_BELLY_BUTTON = 'spine01'
 BONE_LEFT_SHOULDER = 'upperarm_L'
 BONE_RIGHT_SHOULDER = 'upperarm_R'
-BONE_NECK = 'neck'
-
 def get_mesh():
     #find the model mesh from the blender file
     if len(bpy.data.meshes) != 0:
@@ -18,16 +16,14 @@ def get_bones(mesh):
         return bones
     else:
         return -1
-
+"""
 mesh = get_mesh()
 bones = get_bones(mesh)
 
 
 bone = bones.get(BONE_BELLY_BUTTON)
-PLANE_BELLY_BUTTON_Z = bones.get(BONE_BELLY_BUTTON).head_local[2]
-PLANE_LEFT_SHOULDER_X = bones.get(BONE_LEFT_SHOULDER).head_local[0]
-PLANE_RIGHT_SHOULDER_X = bones.get(BONE_RIGHT_SHOULDER).head_local[0]
-PLANE_NECK_Z = bones.get(BONE_NECK).head_local[2]
+
+
 # making sure active object is the mesh, and not the skeleton
 cur = bpy.context.active_object
 print(cur.type)
@@ -42,77 +38,93 @@ if cur.type != 'MESH':
 if bpy.context.active_object.type != 'MESH':
     print('failed in finding humaniod mesh')
     exit(1)
+"""
+
+GARMENT = 'tshirt'
+HUMANOID_DEFAULT = 'human_male_base03'
+ARMATURE_NAME = 'skeleton_human_male.001'
+
+garment = bpy.data.objects.get(GARMENT)
+humanoid = bpy.data.objects.get(HUMANOID_DEFAULT)
+
+vertices_humanoid = humanoid.data.vertices
+bones = bpy.data.armatures.get(ARMATURE_NAME).bones
 
 
-# we assume that no vertices from the upper body extend down below the LEVEL_UPPER_LOWER point
+##### Segmentation into vertex groups #####
+if 'GROUP_TORSO' not in humanoid.vertex_groups.keys():
+    BONE_BELLY_BUTTON = 'spine01'
+    BONE_ELBOW_RIGHT = 'lowerarm_R'
+    BONE_ELBOW_LEFT = 'lowerarm_L'
+    BONE_NECK = 'neck'
 
-bpy.ops.object.mode_set(mode='EDIT')
-bpy.ops.mesh.select_all(action='SELECT')
-bpy.ops.mesh.bisect(plane_co=(0,0,PLANE_BELLY_BUTTON_Z),plane_no=(0,0,1))
-bpy.ops.object.mode_set(mode='OBJECT')
+    BELLY_BUTTON_Z = bones.get(BONE_BELLY_BUTTON).head_local[2]
+    ELBOW_RIGHT_X = bones.get(BONE_ELBOW_RIGHT).head_local[0]
+    ELBOW_LEFT_X = bones.get(BONE_ELBOW_LEFT).head_local[0]
+    NECK_Z = bones.get(BONE_NECK).head_local[2]
 
-bpy.ops.object.mode_set(mode='EDIT')
-bpy.ops.mesh.select_all(action='SELECT')
-bpy.ops.mesh.bisect(plane_co=(PLANE_LEFT_SHOULDER_X,0,0),plane_no=(1,0,0))
-bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.bisect(plane_co=(0,0,BELLY_BUTTON_Z),plane_no=(0,0,1))
+    bpy.ops.object.mode_set(mode='OBJECT')
 
-bpy.ops.object.mode_set(mode='EDIT')
-bpy.ops.mesh.select_all(action='SELECT')
-bpy.ops.mesh.bisect(plane_co=(PLANE_RIGHT_SHOULDER_X,0,0),plane_no=(1,0,0))
-bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.bisect(plane_co=(0,0,NECK_Z),plane_no=(0,0,1))
+    bpy.ops.object.mode_set(mode='OBJECT')
 
-bpy.ops.object.mode_set(mode='EDIT')
-bpy.ops.mesh.select_all(action='SELECT')
-bpy.ops.mesh.bisect(plane_co=(0,0,PLANE_NECK_Z),plane_no=(0,0,1))
-bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.bisect(plane_co=(ELBOW_RIGHT_X,0,0),plane_no=(1,0,0))
+    bpy.ops.object.mode_set(mode='OBJECT')
 
-# we start by 'deactivating' or 'desecting' vertices that aren't the target of division (don't know if it'll work...)
-obj = bpy.context.active_object
-group_lower_body = obj.vertex_groups.new(name='GROUP_LOWER_BODY')
-group_left_arm = obj.vertex_groups.new(name = 'GROUP_LEFT_ARM')
-group_right_arm = obj.vertex_groups.new(name='GROUP_RIGHT_ARM')
-group_torso = obj.vertex_groups.new(name='GROUP_TORSO')
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.bisect(plane_co=(ELBOW_LEFT_X,0,0),plane_no=(1,0,0))
+    bpy.ops.object.mode_set(mode='OBJECT')
 
-group_list = [group_lower_body, group_left_arm, group_right_arm]
-groups_so_far = []
+    group_lower_body = humanoid.vertex_groups.new(name='GROUP_LOWER_BODY')
+    group_left_lower_arm = humanoid.vertex_groups.new(name = 'GROUP_LEFT_LOWER_ARM')
+    group_right_lower_arm = humanoid.vertex_groups.new(name='GROUP_RIGHT_LOWER_ARM')
+    group_torso = humanoid.vertex_groups.new(name='GROUP_TORSO')
+    group_head = humanoid.vertex_groups.new(name='GROUP_HEAD')
 
-vertex_indices = []
-for vertex in mesh.vertices:
-    if vertex.co[2] < PLANE_BELLY_BUTTON_Z:
-        vertex_indices.append(vertex.index)
+    indices = [[],[],[],[],[]]
+    for v in vertices_humanoid:
+        if v.co[2]<BELLY_BUTTON_Z:
+            indices[0].append(v.index)
+        elif v.co[2]>NECK_Z:
+            indices[1].append(v.index)
+        elif v.co[0] > ELBOW_LEFT_X:
+            indices[2].append(v.index)
+        elif v.co[0] < ELBOW_RIGHT_X:
+            indices[3].append(v.index)
+        else:
+            indices[4].append(v.index)
 
-#weights = [ 0.5 for i in range(len(vertex_indices))]
-group_lower_body.add(vertex_indices, 0.5, 'REPLACE')
-groups_so_far.append(group_lower_body.index)
+    group_lower_body.add(indices[0],0.5,'REPLACE')
+    group_head.add(indices[1],0.5,'REPLACE')         
+    group_left_lower_arm.add(indices[2], 0.5, 'REPLACE')
+    group_right_lower_arm.add(indices[3], 0.5, 'REPLACE')
+    group_torso.add(indices[4],0.5,'REPLACE')
 
-vertex_indices_left = []
-vertex_indices_right = []
-for vertex in mesh.vertices:
-    is_covered = False
-    for grp in vertex.groups:
-        if grp.group in groups_so_far:
-            is_covered = True
-            break
-    if is_covered==False:
-        # these two cases should be exclusive!
-        if vertex.co[0] > PLANE_LEFT_SHOULDER_X:
-            vertex_indices_left.append(vertex.index)
-        if vertex.co[0] < PLANE_RIGHT_SHOULDER_X:
-            vertex_indices_right.append(vertex.index)
-group_left_arm.add(vertex_indices_left,0.5,'REPLACE')
-group_right_arm.add(vertex_indices_right, 0.5, 'REPLACE')
-groups_so_far.append(group_left_arm.index)
-groups_so_far.append(group_right_arm.index)
 
-vertex_indices=[]
-for vertex in mesh.vertices:
-    is_covered = False
-    for grp in vertex.groups:
-        if grp.group in groups_so_far:
-            is_covered=True
-            break
-    if is_covered==False and vertex.co[2] < PLANE_NECK_Z:
-        vertex_indices.append(vertex.index)
-group_torso.add(vertex_indices,0.5,'REPLACE')
-
-# vertex groups should be set (segmentation)
+# for each vertex in the target area, 
+"""
+count=10
+for v in vertices_humanoid:
+    local_coords = garment.matrix_world.inverted() @ v.co
+    local_normal = garment.matrix_world.inverted() @ v.normal
+    
+    # LOCATION is going to be in LOCAL coords (have to change later)
+    is_region, location, normal, face_index = garment.ray_cast([local_coords[0],local_coords[1],local_coords[2]],[local_normal[0],local_normal[1],local_normal[2]])
+    
+    if is_region:
+        # add to vertex group, and add the LOCATION as a garment mesh vertex
+        v.co += v.normal
+        count-=1
+    
+    
+    if count ==0:
+        break
+"""
