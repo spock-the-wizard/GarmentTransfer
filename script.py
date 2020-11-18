@@ -1,84 +1,41 @@
 import bpy
-
+from enum import Enum
+import mathutils
 # basic string keywords
 GARMENT = 'tshirt'
-HUMANOID_DEFAULT = 'default'
-ARMATURE_DEFAULT = 'default_armature'
-HUMANOID_INPUT = 'input'
-ARMATURE_INPUT = 'input_armature'
+HUMANOID_DEFAULT = 'default_mesh'
+ARMATURE_DEFAULT = 'default'
+HUMANOID_INPUT = 'input_mesh'
+ARMATURE_INPUT = 'input'
+
+class Humanoid:
+    def __init__(self, mesh_name, armature_name, spine, neck, upperarmR, upperarmL):
+        self.name = mesh_name
+        self.armature_name = armature_name
+        self.spine = spine
+        self.neck = neck
+        self.upperarmR = upperarmR
+        self.upperarmL = upperarmL
+        
+        self.object = bpy.data.objects.get(mesh_name)
+        self.armature = bpy.data.objects.get(armature_name)
+        
+    def get_bone(self, name):
+        if name in self.armature.data.bones.keys():
+            return self.armature.data.bones.get(name)
+        else:
+            return None
+        
+
+default = Humanoid('default_mesh','default', 'spine01','neck','upperarm_R','upperarm_L')
+input = Humanoid('input_mesh','input','Spine','Neck','Upper Arm.R', 'Upper Arm.L')
+
 
 garment = bpy.data.objects.get(GARMENT)
 humanoid_default = bpy.data.objects.get(HUMANOID_DEFAULT)
-humanoid_input = bpy.data.object.get(HUMANOID_INPUT)
+humanoid_input = bpy.data.objects.get(HUMANOID_INPUT)
 armature_default = bpy.data.objects.get(ARMATURE_DEFAULT)
 armature_input = bpy.data.objects.get(ARMATURE_INPUT)
-
-
-
-"""
-vertices_humanoid = humanoid.data.vertices
-bones = bpy.data.armatures.get(ARMATURE_NAME).bones
-
-
-##### Segmentation into vertex groups #####
-if 'GROUP_TORSO' not in humanoid.vertex_groups.keys():
-    BONE_BELLY_BUTTON = 'spine01'
-    BONE_ELBOW_RIGHT = 'lowerarm_R'
-    BONE_ELBOW_LEFT = 'lowerarm_L'
-    BONE_NECK = 'neck'
-
-    BELLY_BUTTON_Z = bones.get(BONE_BELLY_BUTTON).head_local[2]
-    ELBOW_RIGHT_X = bones.get(BONE_ELBOW_RIGHT).head_local[0]
-    ELBOW_LEFT_X = bones.get(BONE_ELBOW_LEFT).head_local[0]
-    NECK_Z = bones.get(BONE_NECK).head_local[2]
-
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.mesh.bisect(plane_co=(0,0,BELLY_BUTTON_Z),plane_no=(0,0,1))
-    bpy.ops.object.mode_set(mode='OBJECT')
-
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.mesh.bisect(plane_co=(0,0,NECK_Z),plane_no=(0,0,1))
-    bpy.ops.object.mode_set(mode='OBJECT')
-
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.mesh.bisect(plane_co=(ELBOW_RIGHT_X,0,0),plane_no=(1,0,0))
-    bpy.ops.object.mode_set(mode='OBJECT')
-
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.mesh.bisect(plane_co=(ELBOW_LEFT_X,0,0),plane_no=(1,0,0))
-    bpy.ops.object.mode_set(mode='OBJECT')
-
-    group_lower_body = humanoid.vertex_groups.new(name='GROUP_LOWER_BODY')
-    group_left_lower_arm = humanoid.vertex_groups.new(name = 'GROUP_LEFT_LOWER_ARM')
-    group_right_lower_arm = humanoid.vertex_groups.new(name='GROUP_RIGHT_LOWER_ARM')
-    group_torso = humanoid.vertex_groups.new(name='GROUP_TORSO')
-    group_head = humanoid.vertex_groups.new(name='GROUP_HEAD')
-
-    indices = [[],[],[],[],[]]
-    for v in vertices_humanoid:
-        if v.co[2]<BELLY_BUTTON_Z:
-            indices[0].append(v.index)
-        elif v.co[2]>NECK_Z:
-            indices[1].append(v.index)
-        elif v.co[0] > ELBOW_LEFT_X:
-            indices[2].append(v.index)
-        elif v.co[0] < ELBOW_RIGHT_X:
-            indices[3].append(v.index)
-        else:
-            indices[4].append(v.index)
-
-    group_lower_body.add(indices[0],0.5,'REPLACE')
-    group_head.add(indices[1],0.5,'REPLACE')         
-    group_left_lower_arm.add(indices[2], 0.5, 'REPLACE')
-    group_right_lower_arm.add(indices[3], 0.5, 'REPLACE')
-    group_torso.add(indices[4],0.5,'REPLACE')
-else:
-    group_torso = humanoid.vertex_groups.get('GROUP_TORSO')
-"""
 
 def ray_cast():
 ###### ray casting from default humanoid to garment! ########
@@ -101,52 +58,154 @@ def ray_cast():
                     humanoid_to_garment[v.index] = index      
             
             
-def tshirt_region(humanoid, right_elbow, right_shoulder, left_elbow, left_shoulder, neck_z, belly_z):
+def find_bones_by_name(armature, names):
+    # list of world coordinates of bones
+    bones = []
+    all_bones = armature.data.bones 
+    for name in names:
+        if name in all_bones.keys():
+            bones.append(all_bones.get(name))
+        else:
+            bones.append(None)
+    return bones
+        
+def tshirt_region(humanoid, right_elbow, right_shoulder, left_elbow, left_shoulder, neck_z, spine_z):
     group_name = ['TSHIRT_TORSO', 'TSHIRT_LEFT', 'TSHIRT_RIGHT']     
     groups = []
     indices = [[],[],[]]
     
     for name in group_name:
-        if name in humanoid.data.vertex_groups.keys():
+        if name in humanoid.vertex_groups.keys():
             print('vertex groups already exist for '+humanoid.name)
             return
     
-    for name in group_name:
-        groups.append(humanoid.data.vertex_groups.add(name))
+    for nm in group_name:
+        groups.append(humanoid.vertex_groups.new(name = nm))
             
     vertices = humanoid.data.vertices
     for v in vertices:
         co = humanoid.matrix_world @ v.co
         
-        if co[2] in range(belly_z, neck_z):
-            if co[0] in range(left_elbow, left_shoulder):
+        if co[2] < neck_z and co[2] > spine_z:
+            if co[0] < left_elbow and co[0] >= left_shoulder:
                 indices[1].append(v.index)
-            elif co[0] in range(left_shoulder, right_shoulder):
+            elif co[0] < left_shoulder and co[0] >= right_shoulder:
                 indices[0].append(v.index)
-            elif co[0] in range(right_shoulder,right_elbow):
+            elif co[0] < right_shoulder and co[0] >= right_elbow:
                 indices[2].append(v.index)
     
     for i in range(3):
         groups[i].add(indices[i], 0.5, 'REPLACE')
+        
+def tshirt_region(humanoid):
+    group_name = ['TSHIRT_TORSO', 'TSHIRT_LEFT', 'TSHIRT_RIGHT']     
+    groups = []
+    indices = [[],[],[]]
+    
+    obj = humanoid.object
+    
+    for name in group_name:
+        if name in obj.vertex_groups.keys():
+            print('vertex groups already exist for '+humanoid.name)
+            return
+    
+    for nm in group_name:
+        groups.append(obj.vertex_groups.new(name = nm))
             
-def tshirt_main_bones(humanoid, armature, right_upper_arm, left_upper_arm, neck, spine):
-    bones = armature.data.bones
-    if name not in bones.keys() for name in [right_upper_arm, left_upper_arm, neck,spine]:
-        print('error finding bones with name '+name+' for object '+humanoid.name)
-        return -1
+    global_mtx = humanoid.object.matrix_world        
+    bones = humanoid.armature.data.bones
     
-    right_arm = bones.get(right_upper_arm)
-    left_arm = bones.get(left_upper_arm)
-    neck_bone = bones.get(neck)
-    spine_bone = bones.get(spine)
+    neck = bones.get(humanoid.neck)
+    spine = bones.get(humanoid.spine)
+    left_arm = bones.get(humanoid.upperarmL)
+    right_arm = bones.get(humanoid.upperarmR)
     
-    global_mtx = humanoid.matrix_world
-    
+    spine_z = (global_mtx @ spine.head_local)[2]
+    neck_z = (global_mtx @ (0.5*(neck.head_local+neck.tail_local)) )[2]            
     right_elbow = (global_mtx @ right_arm.tail_local)[0]
     right_shoulder = (global_mtx @ right_arm.head_local)[0]
     left_elbow = (global_mtx @ left_arm.tail_local)[0]
     left_shoulder = (global_mtx @ left_arm.head_local)[0]
-    neck_z = (global_mtx @ neck_bone.head_local)[2]
-    spine_z = (global_mtx @ spine_bone.head_local)[2]
+
+    vertices = obj.data.vertices
+    for v in vertices:
+        co = obj.matrix_world @ v.co
+        
+        if co[2] < neck_z and co[2] > spine_z:
+            if co[0] < left_elbow and co[0] >= left_shoulder:
+                indices[1].append(v.index)
+            elif co[0] < left_shoulder and co[0] >= right_shoulder:
+                indices[0].append(v.index)
+            elif co[0] < right_shoulder and co[0] >= right_elbow:
+                indices[2].append(v.index)
+    
+    for i in range(3):
+        groups[i].add(indices[i], 0.5, 'REPLACE')
+        
+def tshirt_main_bones(humanoid, armature, right_upper_arm, left_upper_arm, neck, spine):
+    right_arm = 0
+    left_arm = 1
+    neck_bone = 2
+    spine_bone=3
+        
+    bones = find_bones_by_name(armature, [right_upper_arm, left_upper_arm, neck, spine])
+    for bone in bones:
+        if bone is None:
+            print('error finding bones with name '+name+' for object '+humanoid.name)
+            return -1
+    
+    global_mtx = humanoid.matrix_world
+    
+    right_elbow = (global_mtx @ bones[right_arm].tail_local)[0]
+    right_shoulder = (global_mtx @ bones[right_arm].head_local)[0]
+    left_elbow = (global_mtx @ bones[left_arm].tail_local)[0]
+    left_shoulder = (global_mtx @ bones[left_arm].head_local)[0]
+    neck_z = (global_mtx @ (0.5*(bones[neck_bone].head_local+bones[neck_bone].tail_local)) )[2]
+    spine_z = (global_mtx @ bones[spine_bone].head_local)[2]
     
     return right_elbow, right_shoulder, left_elbow, left_shoulder, neck_z, spine_z
+
+#right_elbow, right_shoulder, left_elbow, left_shoulder, neck_z, spine_z = tshirt_main_bones(humanoid_input, armature_input, 'Upper Arm.R', 'Upper Arm.L', 'Neck', 'Spine')
+
+#right_elbow, right_shoulder, left_elbow, left_shoulder, neck_z, spine_z = tshirt_main_bones(humanoid_default, armature_default, 'upperarm_R', 'upperarm_L', 'neck', 'spine01')
+#print(right_elbow, right_shoulder, left_elbow, left_shoulder, neck_z, spine_z)
+
+#tshirt_region(humanoid_default, right_elbow, right_shoulder, left_elbow, left_shoulder, neck_z, spine_z)
+tshirt_region(default)
+
+# all vectors should be in world coordinates
+def arm_2_arm_transformation(src, dst, src_trans, dst_trans):
+    current = mathutils.Vector(dst-src)
+    target = mathutils.Vector(dst_trans-src_trans)
+    
+    # Translation mtx for moving src to origin
+    trnsl = mathutils.Matrix.Translation(-src)
+    # Rotation mtx for fitting angle
+    rotation_difference = target.rotation_difference(current)#current.rotation_difference(target)
+    axis, angle = rotation_difference.to_axis_angle()
+    rot = mathutils.Matrix.Rotation(angle, 4, axis)
+    # Scale mtx to match length
+    factor = target.length / current.length
+    scl = mathutils.Matrix.Scale(factor, 4, target)
+    # Translation mtx for moving to src_trans
+    trnsl_final = mathutils.Matrix.Translation(src_trans)
+    
+    return trnsl_final @ scl @ rot @ trnsl
+
+def_right_arm = default.get_bone((default.upperarmR))
+def_src = default.object.matrix_world @ def_right_arm.head_local
+def_dst = default.object.matrix_world @ def_right_arm.tail_local
+
+inp_right_arm = input.get_bone(input.upperarmR)
+inp_src = input.object.matrix_world @ inp_right_arm.head_local
+inp_dst = input.object.matrix_world @ inp_right_arm.tail_local
+
+mtx = arm_2_arm_transformation(def_src, def_dst, inp_src, inp_dst)
+
+vertices = default.object.data.vertices
+vg_right = default.object.vertex_groups.get('TSHIRT_RIGHT')
+mtx_world = default.object.matrix_world
+for v in vertices:
+    for group in v.groups:
+        if group.group == vg_right.index:
+            v.co = mtx_world.inverted() @ mtx @ mtx_world @ v.co
