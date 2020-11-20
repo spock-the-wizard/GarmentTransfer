@@ -181,7 +181,7 @@ def arm_2_arm_transformation(src, dst, src_trans, dst_trans):
     # Translation mtx for moving src to origin
     trnsl = mathutils.Matrix.Translation(-src)
     # Rotation mtx for fitting angle
-    rotation_difference = target.rotation_difference(current)#current.rotation_difference(target)
+    rotation_difference = current.rotation_difference(target) #target.rotation_difference(current)#
     axis, angle = rotation_difference.to_axis_angle()
     rot = mathutils.Matrix.Rotation(angle, 4, axis)
     # Scale mtx to match length
@@ -192,6 +192,77 @@ def arm_2_arm_transformation(src, dst, src_trans, dst_trans):
     
     return trnsl_final @ scl @ rot @ trnsl
 
+def torso_transformation(default, input):
+    
+    right = 0
+    left = 1
+    spine = 2
+    neck = 3
+    
+    # compute world coordinates for 'control points'
+    def_co = []
+    bones = default.armature.data.bones
+    def_co.append(bones.get(default.upperarmR).head_local)
+    def_co.append(bones.get(default.upperarmL).head_local)
+    def_co.append(bones.get(default.spine).head_local)
+    def_co.append(bones.get(default.neck).head_local)
+    for i in range(4):
+        def_co[i] = default.object.matrix_world @ def_co[i]
+    
+    inp_co =[]
+    bones = input.armature.data.bones
+    inp_co.append(bones.get(input.upperarmR).head_local)
+    inp_co.append(bones.get(input.upperarmL).head_local)
+    inp_co.append(bones.get(input.spine).head_local)
+    inp_co.append(bones.get(input.neck).head_local)
+    for i in range(4):
+        inp_co[i] = input.object.matrix_world @ inp_co[i]
+
+    vec_def = []
+    vec_def.append(mathutils.Vector(def_co[right]-def_co[neck]))
+    vec_def.append(mathutils.Vector(def_co[left]-def_co[neck]))
+    vec_def.append(mathutils.Vector(def_co[spine]-def_co[neck]))
+    
+    vec_inp = []
+    vec_inp.append(mathutils.Vector(inp_co[right]-inp_co[neck]))
+    vec_inp.append(mathutils.Vector(inp_co[left]-inp_co[neck]))
+    vec_inp.append(mathutils.Vector(inp_co[spine]-inp_co[neck]))
+    
+    # matrix computation for each alignment step!
+    
+    # translate to the origin first
+    trnsl = mathutils.Matrix.Translation(-def_co[neck])
+    
+    # scale in z dirction to match spine length
+    factor = abs(vec_inp[spine][2]/vec_def[spine][2])
+    scl_z = mathutils.Matrix.Scale(factor,4,[0,0,-1])
+    
+    # shear to match shoulder
+    f1 = (vec_def[right][0]-vec_inp[right][0])/vec_def[right][2]
+    f2 = (vec_inp[right][2]-vec_def[right][2])/vec_inp[right][0]
+    shear = mathutils.Matrix.Shear('XZ', 4, [0,f2])
+    
+    factor = abs(vec_inp[right][0]/vec_def[right][0])
+    scl_x = mathutils.Matrix.Scale(factor,4,[-1,0,0])
+    
+    factor =  abs(vec_inp[left][0]/vec_def[left][0])
+    scl_x_ = mathutils.Matrix.Scale(factor,4,[1,0,0])
+    
+    trnsl_final = mathutils.Matrix.Translation(inp_co[neck])
+    
+    mtx_right = trnsl_final @ shear @ scl_z @ trnsl
+    mtx_left = trnsl_final @ scl_z @ trnsl
+    
+    return mtx_right, mtx_left
+
+
+mtx_world = default.object.matrix_world
+vertices = default.object.data.vertices
+
+vg_torso = default.object.vertex_groups.get('TSHIRT_TORSO')        
+vg_right = default.object.vertex_groups.get('TSHIRT_RIGHT')
+vg_left = default.object.vertex_groups.get('TSHIRT_LEFT')
+"""
 def_right_arm = default.get_bone((default.upperarmR))
 def_src = default.object.matrix_world @ def_right_arm.head_local
 def_dst = default.object.matrix_world @ def_right_arm.tail_local
@@ -202,10 +273,47 @@ inp_dst = input.object.matrix_world @ inp_right_arm.tail_local
 
 mtx = arm_2_arm_transformation(def_src, def_dst, inp_src, inp_dst)
 
-vertices = default.object.data.vertices
 vg_right = default.object.vertex_groups.get('TSHIRT_RIGHT')
-mtx_world = default.object.matrix_world
 for v in vertices:
     for group in v.groups:
         if group.group == vg_right.index:
             v.co = mtx_world.inverted() @ mtx @ mtx_world @ v.co
+            
+def_left_arm = default.get_bone((default.upperarmL))
+def_src = default.object.matrix_world @ def_left_arm.head_local
+def_dst = default.object.matrix_world @ def_left_arm.tail_local
+
+inp_left_arm = input.get_bone(input.upperarmL)
+inp_src = input.object.matrix_world @ inp_left_arm.head_local
+inp_dst = input.object.matrix_world @ inp_left_arm.tail_local
+
+mtx = arm_2_arm_transformation(def_src, def_dst, inp_src, inp_dst)
+
+vg_left = default.object.vertex_groups.get('TSHIRT_LEFT')
+for v in vertices:
+    for group in v.groups:
+        if group.group == vg_left.index:
+            v.co = mtx_world.inverted() @ mtx @ mtx_world @ v.co
+
+     
+
+mtx_right, mtx_left = torso_transformation(default,input)
+
+vg_torso = default.object.vertex_groups.get('TSHIRT_TORSO')
+for v in vertices:
+    for group in v.groups:
+        if group.group == vg_torso.index:
+            if v.co[0]<0:
+                v.co = mtx_world.inverted() @  mtx_right @ mtx_world @ v.co
+            else:
+                v.co = mtx_world.inverted() @ mtx_left @ mtx_world @ v.co
+    
+""" 
+mtx_right, mtx_left = torso_transformation(default,input)
+for v in vertices:
+    for group in v.groups:
+        if group.group in [vg_left.index, vg_right.index, vg_torso.index]:
+            if v.co[0]<0:
+                v.co = mtx_world.inverted() @  mtx_right @ mtx_world @ v.co
+            else:
+                v.co = mtx_world.inverted() @ mtx_left @ mtx_world @ v.co
