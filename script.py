@@ -369,29 +369,31 @@ def ray_cast(ROI, target):
     results = []
     for v in vertices:
         # local coordinates of the rays onto model coordinate system
-        localC = target.matrix_world.inverted() @ v.co
-        localN = target.matrix_world.inverted() @ v.normal
+        localC = target.matrix_world.inverted() @ ROI.matrix_world @ v.co
+        localN = target.matrix_world.inverted() @ ROI.matrix_world @ v.normal
+        # just being safe normal is long enough
+        localN = 100 * localN
         
         # apply ray casting, store the result
         collision, location, n, i = target.ray_cast([localC[0], localC[1], localC[2]],[localN[0],localN[1],localN[2]])
         
+        if not collision:
+            collision, location, n, i = target.ray_cast([localC[0], localC[1], localC[2]],[-localN[0],-localN[1],-localN[2]])
+            
         location_global = target.matrix_world @ location
     
-        results.append({'index':v.index,'collision':collision,'location':location_global})
+        results.append([v.index,collision,location])
         
     return results
-
-
-def_inp_ray_cast = ray_cast(default_aligned, input.object)
-def_gar_ray_cast = ray_cast(default_aligned, garment_aligned)
 
 vertices =garment_aligned.data.vertices
 mtx_world = garment_aligned.matrix_world
 vg_right = garment_aligned.vertex_groups.get('TSHIRT_RIGHT')
 vg_left = garment_aligned.vertex_groups.get('TSHIRT_LEFT')
 
+print(garment_aligned.matrix_world)
 for v in vertices:
-    if v.co[0]<0:
+    if (garment_aligned.matrix_world @ v.co)[0] <0:
         v.co = mtx_world.inverted() @  mtx_right @ mtx_world @ v.co
     else:
         v.co = mtx_world.inverted() @ mtx_left @ mtx_world @ v.co
@@ -402,4 +404,50 @@ for v in vertices:
                 v.co = mtx_world.inverted() @ mtxR @ mtx_world @ v.co
             elif group.group == vg_left.index:
                 v.co = mtx_world.inverted() @ mtxL @ mtx_world @ v.co
+                
+ray_cast_input = ray_cast(default_aligned, input.object)
+ray_cast_garment = ray_cast(default_aligned, garment_aligned)
 
+ctrl_pts = []
+ctrl_pts_target = []
+for i in range(len(default_aligned.data.vertices)):
+    
+    # co1 is in input coordinate system
+    idx1, col1, co1 = ray_cast_input[i]
+    # co2 is in garment coordinate system
+    idx2, col2, co2 = ray_cast_garment[i]
+    
+    #diff = (co of input in global : co1) - (co of default_aligned in global)
+    #and multiply by inverse world matrix of garment_aligned
+    diff = (input.matrix_world @ co1) - (default.matrix_world @ default_aligned.data.vertices[idx1].co)
+    diff = garment_aligned.matrix_world.inverted() @ diff
+    
+    #co1 = input.matrix_world @ co1
+    if col1 and col2:
+        ctrl_pts.append(co2)
+        ctrl_pts_target.append(co2 + diff)
+        
+start_idx = len(vertices)
+vertices.add(len(ctrl_pts))
+for i in range(len(ctrl_pts)):    
+    vertices[start_idx+i].co = ctrl_pts[i]
+
+vg_ctrl = garment_aligned.vertex_groups.new(name = 'control_points')
+vg_ctrl.add(range(start_idx, start_idx+len(ctrl_pts)), 0.5, 'REPLACE')
+
+print(len(garment.data.vertices))
+print(len(garment_aligned.data.vertices))
+
+laplacian = garment_aligned.modifiers.new(name = 'Laplacian', type='LAPLACIANDEFORM')
+laplacian.vertex_group = 'control_points'
+laplacian.iterations = 3
+bpy.ops.object.laplaciandeform_bind({"object" : garment_aligned},
+        modifier='Laplacian'
+        )
+print(laplacian.is_bind,laplacian.iterations)
+
+"""
+for i in range(len(ctrl_pts)):    
+    vertices[start_idx+i].co = ctrl_pts_target[i]
+    
+"""
