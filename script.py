@@ -1,12 +1,13 @@
 import bpy
-from enum import Enum
 import mathutils
+import numpy as np
 # basic string keywords
 GARMENT = 'tshirt'
 HUMANOID_DEFAULT = 'default_mesh'
 ARMATURE_DEFAULT = 'default'
 HUMANOID_INPUT = 'input_mesh'
 ARMATURE_INPUT = 'input'
+
 
 class Humanoid:
     def __init__(self, mesh_name, armature_name, spine, neck, upperarmR, upperarmL):
@@ -36,78 +37,33 @@ class Humanoid:
         
     def to_world_co(self, co):
         return self.matrix_world @ co
-        
-
-default = Humanoid('default_mesh','default', 'spine01','neck','upperarm_R','upperarm_L')
-input = Humanoid('input_mesh','input','Spine','Neck','Upper Arm.R', 'Upper Arm.L')
 
 
-garment = bpy.data.objects.get(GARMENT)
-humanoid_default = bpy.data.objects.get(HUMANOID_DEFAULT)
-humanoid_input = bpy.data.objects.get(HUMANOID_INPUT)
-armature_default = bpy.data.objects.get(ARMATURE_DEFAULT)
-armature_input = bpy.data.objects.get(ARMATURE_INPUT)
-
-def ray_cast():
-###### ray casting from default humanoid to garment! ########
-    humanoid_to_garment = {}
-    for v in vertices_humanoid:
-        for grp in v.groups:
-            if grp.group==group_torso.index:
-                # get local coordinates of the vertex
-                localC = garment.matrix_world.inverted() @ v.co
-                localN = garment.matrix_world.inverted() @ v.normal
-                
-                    
-                # apply ray casting, store the result
-                collision, location, nml, idx = garment.ray_cast([localC[0], localC[1], localC[2]],[localN[0],localN[1],localN[2]])
-                # if collision was detected, add intersection to garment and store its index along with origin in humanoid
-                if collision:
-                    garment.data.vertices.add(1)
-                    index = len(garment.data.vertices)-1
-                    garment.data.vertices[index].co = location
-                    humanoid_to_garment[v.index] = index      
-            
-            
-def find_bones_by_name(armature, names):
-    # list of world coordinates of bones
-    bones = []
-    all_bones = armature.data.bones 
-    for name in names:
-        if name in all_bones.keys():
-            bones.append(all_bones.get(name))
-        else:
-            bones.append(None)
-    return bones
-        
-def tshirt_region(humanoid, right_elbow, right_shoulder, left_elbow, left_shoulder, neck_z, spine_z):
-    group_name = ['TSHIRT_TORSO', 'TSHIRT_LEFT', 'TSHIRT_RIGHT']     
-    groups = []
-    indices = [[],[],[]]
+def region_of_interest(obj):
+    vertices = obj.data.vertices
     
-    for name in group_name:
-        if name in humanoid.vertex_groups.keys():
-            print('vertex groups already exist for '+humanoid.name)
-            return
-    
-    for nm in group_name:
-        groups.append(humanoid.vertex_groups.new(name = nm))
-            
-    vertices = humanoid.data.vertices
+    vg_torso = obj.vertex_groups.get('TSHIRT_TORSO')        
+    vg_right = obj.vertex_groups.get('TSHIRT_RIGHT')
+    vg_left = obj.vertex_groups.get('TSHIRT_LEFT')
+    vgs = [vg_torso.index, vg_right.index, vg_left.index]
+
+    bpy.ops.object.mode_set(mode = 'OBJECT')
+    bpy.ops.object.select_all(action = 'DESELECT')
+    obj.select_set(True)
     for v in vertices:
-        co = humanoid.matrix_world @ v.co
-        
-        if co[2] < neck_z and co[2] > spine_z:
-            if co[0] < left_elbow and co[0] >= left_shoulder:
-                indices[1].append(v.index)
-            elif co[0] < left_shoulder and co[0] >= right_shoulder:
-                indices[0].append(v.index)
-            elif co[0] < right_shoulder and co[0] >= right_elbow:
-                indices[2].append(v.index)
-    
-    for i in range(3):
-        groups[i].add(indices[i], 0.5, 'REPLACE')
-        
+        check = False
+        for group in v.groups:
+            if group.group in vgs:
+                check = True
+                break
+        if not check:
+            v.select = True
+            
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.delete(type='VERT')
+    bpy.ops.object.mode_set(mode='OBJECT')    
+    bpy.ops.object.select_all(action = 'DESELECT')
+
 def tshirt_region(humanoid, garment):
     group_name = ['TSHIRT_TORSO', 'TSHIRT_LEFT', 'TSHIRT_RIGHT']     
     
@@ -150,54 +106,9 @@ def tshirt_region(humanoid, garment):
                 elif co[0] < right_shoulder and co[0] >= right_elbow:
                     indices[2].append(v.index)
         for i in range(3):
-            groups[i].add(indices[i], 0.5, 'REPLACE')           
-        
-   
-        
-def tshirt_main_bones(humanoid, armature, right_upper_arm, left_upper_arm, neck, spine):
-    right_arm = 0
-    left_arm = 1
-    neck_bone = 2
-    spine_bone=3
-        
-    bones = find_bones_by_name(armature, [right_upper_arm, left_upper_arm, neck, spine])
-    for bone in bones:
-        if bone is None:
-            print('error finding bones with name '+name+' for object '+humanoid.name)
-            return -1
-    
-    global_mtx = humanoid.matrix_world
-    
-    right_elbow = (global_mtx @ bones[right_arm].tail_local)[0]
-    right_shoulder = (global_mtx @ bones[right_arm].head_local)[0]
-    left_elbow = (global_mtx @ bones[left_arm].tail_local)[0]
-    left_shoulder = (global_mtx @ bones[left_arm].head_local)[0]
-    neck_z = (global_mtx @ (0.5*(bones[neck_bone].head_local+bones[neck_bone].tail_local)) )[2]
-    spine_z = (global_mtx @ bones[spine_bone].head_local)[2]
-    
-    return right_elbow, right_shoulder, left_elbow, left_shoulder, neck_z, spine_z
+            groups[i].add(indices[i], 0.5, 'REPLACE')
 
 
-tshirt_region(default, garment)
-
-# all vectors should be in world coordinates
-def arm_2_arm_transformation(src, dst, src_trans, dst_trans):
-    current = mathutils.Vector(dst-src)
-    target = mathutils.Vector(dst_trans-src_trans)
-    
-    # Translation mtx for moving src to origin
-    trnsl = mathutils.Matrix.Translation(-src)
-    # Rotation mtx for fitting angle
-    rotation_difference = current.rotation_difference(target) #target.rotation_difference(current)#
-    axis, angle = rotation_difference.to_axis_angle()
-    rot = mathutils.Matrix.Rotation(angle, 4, axis)
-    # Scale mtx to match length
-    factor = target.length / current.length
-    scl = mathutils.Matrix.Scale(factor, 4, target)
-    # Translation mtx for moving to src_trans
-    trnsl_final = mathutils.Matrix.Translation(src_trans)
-    
-    return trnsl_final @ scl @ rot @ trnsl
 
 def torso_transformation(default, input):
     
@@ -303,70 +214,11 @@ def duplicate_object(obj):
     dup_obj.select_set(state=False)
     return dup_obj
 
-# create a replica of default humanoid to manipulate if not already there
-name = default.name +'.001'
-if name not in bpy.data.objects.keys():
-    default_aligned = duplicate_object(default.object)
-    garment_aligned = duplicate_object(garment)
-    
-    mtx_world = default_aligned.matrix_world
-    vertices = default_aligned.data.vertices
-    
-    vg_torso = default_aligned.vertex_groups.get('TSHIRT_TORSO')        
-    vg_right = default_aligned.vertex_groups.get('TSHIRT_RIGHT')
-    vg_left = default_aligned.vertex_groups.get('TSHIRT_LEFT')
-    vgs = [vg_torso.index, vg_right.index, vg_left.index]
-
-    # leave only the region of interest and delete the rest
-    default_aligned.select_set(state=True)
-    bpy.ops.object.mode_set(mode = 'OBJECT')
-    for v in vertices:
-        check = False
-        for group in v.groups:
-            if group.group in vgs:
-                check = True
-                break
-        if not check:
-            v.select = True
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.delete(type = 'VERT')
-    bpy.ops.object.mode_set(mode = 'OBJECT')
-
-
-    # transform to fit the torso
-    mtx_right, mtx_left, right_pos, left_pos = torso_transformation(default,input)
-    
-    for v in vertices:
-        if v.co[0]<0:
-            v.co = mtx_world.inverted() @  mtx_right @ mtx_world @ v.co
-        else:
-            v.co = mtx_world.inverted() @ mtx_left @ mtx_world @ v.co
-        
-
-    # transform to fit both arms
-    def_src,def_dst = default.bone_world_co(default.upperarmR)
-    inp_src,inp_dst = input.bone_world_co(input.upperarmR)
-    mtxR = arm_transformation(right_pos,def_dst-def_src, inp_dst-inp_src)
-    
-    def_src,def_dst = default.bone_world_co(default.upperarmL)
-    inp_src,inp_dst = input.bone_world_co(input.upperarmL)  
-    mtxL = arm_transformation(left_pos,def_dst-def_src, inp_dst-inp_src)
-    
-    for v in vertices:
-        for group in v.groups:
-            if group.group == vg_right.index:
-                v.co = mtx_world.inverted() @ mtxR @ mtx_world @ v.co
-            elif group.group == vg_left.index:
-                v.co = mtx_world.inverted() @ mtxL @ mtx_world @ v.co
-                
-else:
-    default_aligned = bpy.data.objects.get(name)
-    garment_aligned = bpy.data.objects.get(GARMENT+'.001')            
-            
-def ray_cast(ROI, target):
+def ray_cast_dep(ROI, target):
     vertices = ROI.data.vertices
     
     results = []
+    polygons = target.data.polygons
     for v in vertices:
         # local coordinates of the rays onto model coordinate system
         localC = target.matrix_world.inverted() @ ROI.matrix_world @ v.co
@@ -375,47 +227,194 @@ def ray_cast(ROI, target):
         localN = 100 * localN
         
         # apply ray casting, store the result
-        collision, location, n, i = target.ray_cast([localC[0], localC[1], localC[2]],[localN[0],localN[1],localN[2]])
+        collision, location, n, face_idx = target.ray_cast([localC[0], localC[1], localC[2]],[localN[0],localN[1],localN[2]])
         
         if not collision:
-            collision, location, n, i = target.ray_cast([localC[0], localC[1], localC[2]],[-localN[0],-localN[1],-localN[2]])
+            collision, location, n, face_idx = target.ray_cast([localC[0], localC[1], localC[2]],[-localN[0],-localN[1],-localN[2]])
             
-        location_global = target.matrix_world @ location
+        #location_global = target.matrix_world @ location
     
-        results.append([v.index,collision,location])
+        results.append([v.index,collision,location,polygons[face_idx]])
         
     return results
 
-vertices =garment_aligned.data.vertices
+def ray_cast(origin, org_mtx_world, targetModel):
+    localC = targetModel.matrix_world.inverted() @ org_mtx_world @ origin.co
+    localN = targetModel.matrix_world.inverted() @ org_mtx_world @ origin.normal
+    localN = 100*localN
+
+    col, loc, n, face_idx = targetModel.ray_cast([localC[0], localC[1], localC[2]],[localN[0],localN[1],localN[2]])
+
+    if not col:
+        col, loc, n, face_idx = targetModel.ray_cast([localC[0], localC[1], localC[2]],[-localN[0],-localN[1],-localN[2]])
+    #bpy.context.scene.update()
+    # returns in targetModel-coordinates
+    return col, loc, targetModel.data.polygons[face_idx]
+
+
+
+
+
+# Set Humanoid Wrapper for Default and Input Model
+default = Humanoid('default_mesh','default', 'spine01','neck','upperarm_R','upperarm_L')
+input = Humanoid('input_mesh','input','Spine','Neck','Upper Arm.R', 'Upper Arm.L')
+# Original Garment Model
+garment = bpy.data.objects.get(GARMENT)
+
+# T-shirt Segmentation of Humanoid objects
+tshirt_region(default, garment)
+tshirt_region(input, garment)
+
+# Creating copies of original garment and default object to edit
+default_aligned = duplicate_object(default.object)
+garment_aligned = duplicate_object(garment)
+input_aligned = duplicate_object(input.object)
+
+##### Start Transforming DEFAULT to fit INPUT #####
+
+region_of_interest(default_aligned)
+region_of_interest(input_aligned)
+
+# Transform DEFAULT to fit the torso
+vertices = default_aligned.data.vertices
+mtx_world = default_aligned.matrix_world
+mtx_right, mtx_left, right_pos, left_pos = torso_transformation(default,input)
+
+for v in vertices:
+    if v.co[0]<0:
+        v.co = mtx_world.inverted() @  mtx_right @ mtx_world @ v.co
+    else:
+        v.co = mtx_world.inverted() @ mtx_left @ mtx_world @ v.co
+    
+# Transform DEFAULT to fit the arms
+vg_right = default_aligned.vertex_groups.get('TSHIRT_RIGHT')
+vg_left = default_aligned.vertex_groups.get('TSHIRT_LEFT')
+def_src,def_dst = default.bone_world_co(default.upperarmR)
+inp_src,inp_dst = input.bone_world_co(input.upperarmR)
+mtxR = arm_transformation(right_pos,def_dst-def_src, inp_dst-inp_src)
+
+def_src,def_dst = default.bone_world_co(default.upperarmL)
+inp_src,inp_dst = input.bone_world_co(input.upperarmL)  
+mtxL = arm_transformation(left_pos,def_dst-def_src, inp_dst-inp_src)
+
+for v in vertices:
+    for group in v.groups:
+        if group.group == vg_right.index:
+            v.co = mtx_world.inverted() @ mtxR @ mtx_world @ v.co
+        elif group.group == vg_left.index:
+            v.co = mtx_world.inverted() @ mtxL @ mtx_world @ v.co
+           
+            
+##### Start Deforming the GARMENT mesh #####
+vertices = garment_aligned.data.vertices
 mtx_world = garment_aligned.matrix_world
 vg_right = garment_aligned.vertex_groups.get('TSHIRT_RIGHT')
 vg_left = garment_aligned.vertex_groups.get('TSHIRT_LEFT')
 
-print(garment_aligned.matrix_world)
+# Apply Alignment Transformation applied to DEFAULT to fit to INPUT
 for v in vertices:
     if (garment_aligned.matrix_world @ v.co)[0] <0:
         v.co = mtx_world.inverted() @  mtx_right @ mtx_world @ v.co
     else:
         v.co = mtx_world.inverted() @ mtx_left @ mtx_world @ v.co
-
 for v in vertices:
         for group in v.groups:
             if group.group == vg_right.index:
                 v.co = mtx_world.inverted() @ mtxR @ mtx_world @ v.co
             elif group.group == vg_left.index:
                 v.co = mtx_world.inverted() @ mtxL @ mtx_world @ v.co
-                
-ray_cast_input = ray_cast(default_aligned, input.object)
-ray_cast_garment = ray_cast(default_aligned, garment_aligned)
 
+
+print(bpy.context.selected_objects)
+bpy.context.view_layer.objects.active = garment_aligned
+bpy.ops.object.select_all(action='DESELECT')
+garment_aligned.select_set(True)
+print(bpy.context.selected_objects)
+bpy.ops.object.mode_set(mode = 'EDIT')
+bpy.ops.mesh.select_all(action = 'DESELECT')
+bpy.ops.object.mode_set(mode = 'OBJECT')
+
+target = []
+start_idx = len(vertices)
+count=0
+print(len(vertices))
+
+for v in default_aligned.data.vertices:
+
+    col1, co1, face1 = ray_cast(v, default_aligned.matrix_world,input_aligned)
+    col2, co2, face2 = ray_cast(v, default_aligned.matrix_world, garment_aligned)
+
+    diff = (input.matrix_world @ co1) - (default_aligned.matrix_world @ v.co)
+    #diff = garment_aligned.matrix_world.inverted() @ diff
+
+    if col1 and col2:
+        
+        bpy.ops.object.mode_set(mode = 'OBJECT')
+        face2.select = True
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.poke()
+        bpy.ops.mesh.select_all(action='DESELECT')
+
+        bpy.ops.object.mode_set(mode='OBJECT')
+        vertices[len(vertices)-1].co = co2
+        target.append(diff)
+        count+=1
+        #if count==10:
+        #    break
+      
+print(start_idx)
+
+x = np.array(target)
+np.save("target.npy",x)
+"""  
+print(len(vertices))
+
+indices = []
+for i in range(len(target)):
+    
+    v = vertices[start_idx+i]
+    name = f"Vert_{v.index}"
+    bpy.ops.object.empty_add(
+            location=garment_aligned.matrix_world @ v.co
+            )
+    mt = bpy.context.object
+    mt.name = name
+    hm = garment_aligned.modifiers.new(
+            name=name,
+            type='HOOK',
+            )
+    hm.object = mt
+    hm.vertex_indices_set([v.index])
+    indices.append(v.index)
+
+    
+vg_ctrl = garment_aligned.vertex_groups.new(name = 'control_points') 
+vg_ctrl.add(indices, 0.5, 'REPLACE')
+     
+laplacian = garment_aligned.modifiers.new(name = 'laplacian', type='LAPLACIANDEFORM')
+laplacian.vertex_group = "control_points"
+bpy.ops.object.laplaciandeform_bind({"object":garment_aligned},modifier='laplacian')  
+
+"""    
+
+"""                
+ray_cast_input = ray_cast_dep(default_aligned, input.object)
+ray_cast_garment = ray_cast_dep(default_aligned, garment_aligned)
+polygons = garment_aligned.data.polygons
+start_idx = len(vertices)
 ctrl_pts = []
 ctrl_pts_target = []
+
+print(len(vertices))
+count=0
+bpy.ops.object.mode_set(mode='EDIT')
+bpy.ops.mesh.select_all(action='DESELECT')
 for i in range(len(default_aligned.data.vertices)):
     
     # co1 is in input coordinate system
-    idx1, col1, co1 = ray_cast_input[i]
+    idx1, col1, co1, f1 = ray_cast_input[i]
     # co2 is in garment coordinate system
-    idx2, col2, co2 = ray_cast_garment[i]
+    idx2, col2, co2, f2 = ray_cast_garment[i]
     
     #diff = (co of input in global : co1) - (co of default_aligned in global)
     #and multiply by inverse world matrix of garment_aligned
@@ -424,19 +423,57 @@ for i in range(len(default_aligned.data.vertices)):
     
     #co1 = input.matrix_world @ co1
     if col1 and col2:
+        bpy.ops.object.mode_set(mode='OBJECT')
+        f2.select = True
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.poke()
+        bpy.ops.mesh.select_all(action='DESELECT')
+        
+        vertices[len(vertices)-1].co = co2
         ctrl_pts.append(co2)
         ctrl_pts_target.append(co2 + diff)
+        count+=1
+        if count==10:
+            break
         
+bpy.ops.object.mode_set(mode='OBJECT')
+print("Added "+str(len(ctrl_pts))+"control points to garment_aligned")   
+print(len(vertices))
+
+  
 start_idx = len(vertices)
 vertices.add(len(ctrl_pts))
-for i in range(len(ctrl_pts)):    
+for i in range(len(ctrl_pts)):
     vertices[start_idx+i].co = ctrl_pts[i]
+print("Added "+str(len(ctrl_pts))+"control points to garment_aligned")    
 
-vg_ctrl = garment_aligned.vertex_groups.new(name = 'control_points')
-vg_ctrl.add(range(start_idx, start_idx+len(ctrl_pts)), 0.5, 'REPLACE')
+indices = []
+for i in range(len(ctrl_pts)):
+    if i%150==0:
+        v = vertices[start_idx+i]
+        name = f"Vert_{v.index}"
+        bpy.ops.object.empty_add(
+                location=garment_aligned.matrix_world @ v.co
+                )
+        mt = bpy.context.object
+        mt.name = name
+        hm = garment_aligned.modifiers.new(
+                name=name,
+                type='HOOK',
+                )
+        hm.object = mt
+        hm.vertex_indices_set([v.index])
+        indices.append(v.index)
 
-print(len(garment.data.vertices))
-print(len(garment_aligned.data.vertices))
+    
+vg_ctrl = garment_aligned.vertex_groups.new(name = 'control_points') 
+vg_ctrl.add(indices, 0.5, 'REPLACE')
+     
+laplacian = garment_aligned.modifiers.new(name = 'laplacian', type='LAPLACIANDEFORM')
+laplacian.vertex_group = "control_points"
+bpy.ops.object.laplaciandeform_bind({"object":garment_aligned},modifier='laplacian')
+
+
 
 laplacian = garment_aligned.modifiers.new(name = 'Laplacian', type='LAPLACIANDEFORM')
 laplacian.vertex_group = 'control_points'
@@ -445,9 +482,40 @@ bpy.ops.object.laplaciandeform_bind({"object" : garment_aligned},
         modifier='Laplacian'
         )
 print(laplacian.is_bind,laplacian.iterations)
-
+"""
 """
 for i in range(len(ctrl_pts)):    
     vertices[start_idx+i].co = ctrl_pts_target[i]
     
+
+
+obj = bpy.data.objects.get("Suzanne")
+vertices = obj.data.vertices
+
+
+me = obj.data
+
+count=0
+for v in me.vertices:
+        name = f"Vert_{v.index}"
+        bpy.ops.object.empty_add(
+                location=obj.matrix_world @ v.co
+                )
+        mt = bpy.context.object
+        mt.name = name
+        hm = obj.modifiers.new(
+                name=name,
+                type='HOOK',
+                )
+        hm.object = mt
+        hm.vertex_indices_set([v.index])
+        
+        
+        
+newGroup = obj.vertex_groups.new(name ="newGroup")
+newGroup.add([27,35,100,0,5,150],0.5, 'REPLACE')        
+laplacian = obj.modifiers.new(name = 'laplacian', type='LAPLACIANDEFORM')
+laplacian.vertex_group = "newGroup"
+bpy.ops.object.laplaciandeform_bind({"object":obj},modifier='laplacian')
+
 """
