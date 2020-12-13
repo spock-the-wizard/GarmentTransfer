@@ -2,7 +2,7 @@ import bpy
 import mathutils
 import numpy as np
 
-garment = bpy.data.objects['tshirt']
+garment = bpy.data.objects['pants']
 
 """
 laplacian = garment.modifiers.new(name = 'laplacian', type='LAPLACIANDEFORM')
